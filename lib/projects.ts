@@ -1,7 +1,13 @@
 import type { Part, Project } from "./calculate";
+import { EMPTY_CATALOG, type Catalog } from "./history";
 
 export const STORAGE_KEY = "steelcalc.projects.v1";
-export type Drafts = { projects: Project[]; active: string };
+export type Drafts = { projects: Project[]; active: string; catalog: Catalog; addedCustomers: string[] };
+
+export const partDefaults = {
+  kind: "plate", spec: "", manualHoles: "", manualWeight: "", quantity: "1",
+  finish: "", billing: "", price: "", tax: "", priceNotes: "",
+} satisfies Pick<Part, "kind" | "spec" | "manualHoles" | "manualWeight" | "quantity" | "finish" | "billing" | "price" | "tax" | "priceNotes">;
 
 export function id() {
   return globalThis.crypto.randomUUID?.() ?? Array.from(
@@ -16,7 +22,7 @@ export function today() {
 export function newPart(existing: Part[]): Part {
   let index = 1;
   while (existing.some((part) => part.number.trim() === partNumber(index))) index++;
-  return { id: id(), number: partNumber(index), drawing: "", length: "", width: "", thickness: "", notes: "", circles: [], rectangles: [] };
+  return { ...partDefaults, id: id(), number: partNumber(index), drawing: "", length: "", width: "", thickness: "", notes: "", circles: [], rectangles: [] };
 }
 
 function partNumber(index: number) {
@@ -27,6 +33,11 @@ export function newProject(): Project {
   return { id: id(), name: "", customer: "", drawing: "", date: today(), notes: "", parts: [newPart([])] };
 }
 
+export function newDrafts(): Drafts {
+  const project = newProject();
+  return { projects: [project], active: project.id, catalog: EMPTY_CATALOG, addedCustomers: [] };
+}
+
 export function readDrafts(): Drafts | null {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
@@ -34,5 +45,13 @@ export function readDrafts(): Drafts | null {
   if (!Array.isArray(data?.projects) || !data.projects.some((project) => project.id === data.active)) {
     throw new Error("无法读取本地项目");
   }
-  return data;
+  return {
+    ...data,
+    catalog: data.catalog ?? EMPTY_CATALOG,
+    addedCustomers: data.addedCustomers ?? data.projects.map((project) => project.customer.trim()).filter(Boolean),
+    projects: data.projects.map((project) => ({
+      ...project,
+      parts: project.parts.map((part) => ({ ...partDefaults, ...part })),
+    })),
+  };
 }

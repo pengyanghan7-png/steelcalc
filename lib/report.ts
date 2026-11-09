@@ -1,71 +1,79 @@
 import ExcelJS from "exceljs";
-import { DENSITY, HEADERS, projectTotals, rowsFor, type Project } from "./calculate";
+import { PART_TYPES, projectTotals, rowsFor, type Project } from "./calculate";
+import { CIRCLE_LABEL, ORDER_HEADERS, RECTANGLE_LABEL, holeGroups, orderCells } from "./order";
 import { today } from "./projects";
+
+const DETAIL_HEADERS = ["零件编号", "图纸编号", "零件类型", "规格型号", "重量来源", "订单数量",
+  "长 (mm)", "宽 (mm)", "厚 (mm)", CIRCLE_LABEL, RECTANGLE_LABEL, "人工开孔说明",
+  "单件毛体积 (mm³)", "圆孔扣除 (mm³)", "方孔扣除 (mm³)", "合计扣除 (mm³)", "单件净体积 (mm³)",
+  "单件毛重 (kg)", "单件净重 (kg)", "理论总净重 (kg)"];
+
+function sheetFor(book: ExcelJS.Workbook, title: string, headers: string[], widths: number[]) {
+  const sheet = book.addWorksheet(title, { views: [{ state: "frozen", ySplit: 2 }] });
+  sheet.columns = widths.map((width) => ({ width }));
+  sheet.addRow([title]);
+  sheet.mergeCells(1, 1, 1, headers.length);
+  darkRow(sheet.getRow(1));
+  darkRow(sheet.addRow(headers));
+  return sheet;
+}
+
+function darkRow(row: ExcelJS.Row) {
+  row.height = 25;
+  row.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF173A5B" } };
+  row.alignment = { vertical: "middle" };
+}
+
+function tableRow(sheet: ExcelJS.Worksheet, values: ExcelJS.CellValue[]) {
+  const row = sheet.addRow(values);
+  row.alignment = { vertical: "top", wrapText: true };
+  if (row.number % 2 === 1) {
+    row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F5FA" } };
+  }
+}
+
+function format(sheet: ExcelJS.Worksheet, columns: number[], numberFormat: string) {
+  for (const column of columns) sheet.getColumn(column).numFmt = numberFormat;
+}
 
 export function report(project: Project) {
   const rows = rowsFor(project);
   const total = projectTotals(rows);
   if (!total) throw new Error("请先修正零件数据，再导出 Excel。");
   const book = new ExcelJS.Workbook();
-  const summary = book.addWorksheet("项目汇总", { views: [{ showGridLines: false }] });
-  summary.columns = [{ width: 25 }, { width: 45 }];
-  summary.addRows([
-    ["SteelCalc 钢板计算汇总"],
-    ["项目 / 订单", project.name],
-    ["客户名称", project.customer],
-    ["图纸编号", project.drawing],
-    ["计算日期", project.date || today()],
-    ["项目备注", project.notes],
-    ["钢材密度 (g/cm³)", DENSITY],
-    ["零件数量", rows.length],
-    ["原板体积 (mm³)", total.gross],
-    ["扣孔体积 (mm³)", total.removed],
-    ["净体积 (mm³)", total.net],
-    ["总重量 (kg)", total.weight],
-  ]);
-  summary.mergeCells("A1:B1");
-  darkRow(summary.getRow(1));
-  for (let index = 2; index <= 12; index++) {
-    const cell = summary.getCell(index, 1);
-    cell.font = { bold: true, color: { argb: "FF173A5B" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF1F7" } };
-  }
-  for (let index = 9; index <= 12; index++) {
-    summary.getCell(index, 2).numFmt = index === 12 ? "#,##0.000" : "#,##0.00";
-  }
+  const orders = sheetFor(book, "生产订单表", ORDER_HEADERS, [14, 19, 25, 39, 13, 15, 24, 19, 22, 14, 15, 26, 13, 28, 14]);
+  const detail = sheetFor(book, "计算明细", DETAIL_HEADERS, [14, 18, 20, 26, 14, 13, 13, 13, 13, 34, 36, 26, 24, 24, 24, 24, 24, 20, 20, 22]);
 
-  const detail = book.addWorksheet("零件明细", { views: [{ state: "frozen", ySplit: 1 }] });
-  detail.columns = [...HEADERS, "圆孔分组 (mm × 个)", "方孔分组 (mm × mm × 个)"].map((header, index) => ({
-    header,
-    width: [8, 16, 19, 13, 13, 13, 13, 13, 22, 22, 22, 18, 29, 32, 36][index],
-  }));
-  darkRow(detail.getRow(1));
-  rows.forEach(({ part, result }, index) => {
-    if (!result) return;
-    const row = detail.addRow([index + 1, part.number, part.drawing || project.drawing,
-      result.length, result.width, result.thickness, result.circleCount, result.rectangleCount,
-      result.gross, result.removed, result.net, result.weight, part.notes,
-      part.circles.map((hole) => "Ø" + hole.diameter + " × " + hole.quantity).join("；"),
-      part.rectangles.map((hole) => hole.length + " × " + hole.width + " × " + hole.quantity).join("；")]);
-    if (index % 2 === 0) row.eachCell((cell) => {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F5FA" } };
-    });
-  });
-  detail.autoFilter = { from: "A1", to: "O" + (rows.length + 1) };
-  const sum = detail.addRow(["合计", "", "", "", "", "",
-    rows.reduce((count, row) => count + (row.result?.circleCount ?? 0), 0),
-    rows.reduce((count, row) => count + (row.result?.rectangleCount ?? 0), 0),
-    total.gross, total.removed, total.net, total.weight]);
-  darkRow(sum);
-  for (const index of [9, 10, 11, 12]) detail.getColumn(index).numFmt = index === 12 ? "#,##0.000" : "#,##0.00";
+  for (const { part, result } of rows) {
+    if (!result) continue;
+    const [date, ...cells] = orderCells(project, part, result);
+    tableRow(orders, [new Date(String(date) + "T00:00:00Z"), ...cells]);
+    const groups = holeGroups(part);
+    const automatic = result.method === "自动计算";
+    tableRow(detail, [part.number, part.drawing || project.drawing, PART_TYPES[part.kind], cells[1], result.method,
+      result.quantity, result.length, result.width, result.thickness, automatic ? groups.circles : "",
+      automatic ? groups.rectangles : "", automatic ? "" : part.manualHoles,
+      result.gross, result.circleVolume, result.rectangleVolume, result.removed, result.net,
+      result.grossWeight, result.weight, result.totalWeight]);
+  }
+  orders.autoFilter = { from: "A2", to: "O" + (rows.length + 2) };
+  detail.autoFilter = { from: "A2", to: "T" + (rows.length + 2) };
+  const orderTotal = orders.addRow(["合计", "", "", "", total.quantity, "", "", "", total.weight]);
+  const detailTotal = detail.addRow(["合计"]);
+  detailTotal.getCell(6).value = total.quantity;
+  detailTotal.getCell(20).value = total.weight;
+  darkRow(orderTotal);
+  darkRow(detailTotal);
+  if (project.name) detail.addRow(["项目 / 订单", project.name]);
+  if (project.notes) detail.addRow(["项目备注", project.notes]);
+  format(orders, [1], "yyyy-mm-dd");
+  format(orders, [7], "#,##0.00");
+  format(orders, [8, 9], "#,##0.000");
+  format(orders, [11], "#,##0.00####");
+  format(detail, [13, 14, 15, 16, 17], "#,##0.00");
+  format(detail, [18, 19, 20], "#,##0.000");
   return book;
-}
-
-function darkRow(row: ExcelJS.Row) {
-  row.height = 24;
-  row.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF173A5B" } };
-  row.alignment = { vertical: "middle" };
 }
 
 export async function downloadReport(project: Project) {

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { calculate, projectTotals, rowsFor, type Part } from "../lib/calculate";
-import { newProject } from "../lib/projects";
+import { newProject, partDefaults } from "../lib/projects";
 
 const base: Part = {
+  ...partDefaults,
   id: "a", number: "P-001", length: "100", width: "80", thickness: "10",
   drawing: "", notes: "", circles: [], rectangles: [],
 };
@@ -17,14 +18,15 @@ function close(actual: number, expected: number) {
 test("无孔钢板", () => {
   assert.deepEqual(calculate(base).result, {
     length: 100, width: 80, thickness: 10, circleCount: 0, rectangleCount: 0,
-    gross: 80_000, removed: 0, net: 80_000, weight: 0.628,
+    method: "自动计算", quantity: 1, gross: 80_000, circleVolume: 0, rectangleVolume: 0,
+    removed: 0, net: 80_000, grossWeight: 0.628, weight: 0.628, totalWeight: 0.628,
   });
 });
 
 test("单个圆孔", () => {
   const { result } = calculate({ ...base, circles: [circle] });
   assert.ok(result);
-  close(result.removed, 1000 * Math.PI);
+  close(result.removed!, 1000 * Math.PI);
   close(result.weight, (80_000 - 1000 * Math.PI) * 7.85 / 1_000_000);
 });
 
@@ -34,7 +36,7 @@ test("多组圆孔分别计数", () => {
   ] });
   assert.ok(result);
   assert.equal(result.circleCount, 6);
-  close(result.removed, 4500 * Math.PI);
+  close(result.removed!, 4500 * Math.PI);
 });
 
 test("多组矩形孔", () => {
@@ -48,15 +50,18 @@ test("多组矩形孔", () => {
 });
 
 test("圆孔与方孔同时扣除", () => {
-  const { result } = calculate({ ...base, circles: [circle], rectangles: [rectangle] });
+  const { result } = calculate({ ...base, quantity: "3", circles: [circle], rectangles: [rectangle] });
   assert.ok(result);
-  close(result.net, 75_000 - 1000 * Math.PI);
+  close(result.circleVolume!, 1000 * Math.PI);
+  close(result.rectangleVolume!, 5000);
+  close(result.net!, 75_000 - 1000 * Math.PI);
+  close(result.totalWeight, (75_000 - 1000 * Math.PI) * 7.85 / 1_000_000 * 3);
 });
 
 test("小数尺寸使用完整精度", () => {
   const { result } = calculate({ ...base, length: "100.25", width: "80.12", thickness: "2.5" });
   assert.ok(result);
-  close(result.gross, 20_080.075);
+  close(result.gross!, 20_080.075);
   close(result.weight, 20_080.075 * 7.85 / 1_000_000);
 });
 
@@ -81,4 +86,25 @@ test("订单按原始精度汇总并拒绝重复编号", () => {
   const invalid = { ...project, parts: [base, { ...base, id: "b" }] };
   assert.equal(projectTotals(rowsFor(invalid)), null);
   assert.ok(rowsFor(invalid)[0].errors?.number);
+});
+
+test("折弯和焊接件使用人工单件净重，体积留空", () => {
+  for (const kind of ["bend", "special"] as const) {
+    const { result } = calculate({ ...base, kind, spec: "异形件", manualWeight: "1.23456", quantity: "7" });
+    assert.ok(result);
+    assert.equal(result.method, "人工填写");
+    assert.equal(result.net, null);
+    assert.equal(result.grossWeight, null);
+    close(result.totalWeight, 8.64192);
+  }
+  assert.ok(calculate({ ...base, kind: "bend" }).errors?.manualWeight);
+  assert.ok(calculate({ ...base, kind: "special", spec: "", manualWeight: "2" }).errors?.spec);
+});
+
+test("数量和单价校验，价格与含税状态可选填", () => {
+  assert.ok(calculate({ ...base, quantity: "1.5" }).errors?.quantity);
+  assert.ok(calculate({ ...base, price: "6" }).errors?.billing);
+  assert.ok(calculate({ ...base, billing: "kg", price: "-0.01" }).errors?.price);
+  assert.ok(calculate({ ...base, billing: "piece", price: "0" }).result);
+  assert.ok(calculate({ ...base, billing: "kg" }).result);
 });
