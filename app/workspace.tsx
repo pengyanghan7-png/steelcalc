@@ -285,8 +285,8 @@ export default function Workspace() {
         <div className="metrics">
           <Metric title="零件记录" value={String(rows.length)} unit="行" />
           <Metric title="订单数量合计" value={totals ? numbers.format(totals.quantity) : "—"} unit="件" />
-          <Metric title="标准板净体积合计" value={totals ? volumes.format(totals.net) : "—"} unit="mm³" />
-          <Metric title="人工填写记录" value={String(rows.filter(({ part }) => part.kind !== "plate").length)} unit="行" />
+          <Metric title="计算净体积合计" value={totals ? volumes.format(totals.net) : "—"} unit="mm³" />
+          <Metric title="人工填写记录" value={String(rows.filter(({ part }) => part.kind !== "plate" && part.weightMode === "manual").length)} unit="行" />
           <Metric title="理论总净重合计" value={totals ? weights.format(totals.weight) : "—"} unit="kg" emphasized />
         </div>
         <Card title="生产订单表" subtitle="按订单数量汇总重量。手工录入的重量会标记为「人工填写」。" action={<div className="buttons">
@@ -315,7 +315,7 @@ export default function Workspace() {
         </Card>
         <div className="action-bar"><button className="button secondary" onClick={() => { setNotice(""); go("entry"); }}><Icon name="left" /> 返回零件录入</button><span>Excel 包含生产订单表与计算明细</span></div>
       </>}
-      <footer><span>SteelCalc · V1.1</span><span>长度 mm　/　体积 mm³　/　重量 kg</span></footer>
+      <footer><span>SteelCalc · V1.2</span><span>长度 mm　/　体积 mm³　/　重量 kg</span></footer>
     </main>
     <dialog ref={projectsDialog} aria-labelledby="projects-title">
       <div className="dialog-head"><h2 id="projects-title">本地项目</h2><button className="icon-button" aria-label="关闭本地项目" onClick={() => projectsDialog.current?.close()}><Icon name="close" /></button></div>

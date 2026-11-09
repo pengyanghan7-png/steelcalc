@@ -92,6 +92,13 @@ h2 { font-size: 18px; line-height: 1.35; }
 .hole-index { color: var(--muted); align-self: start; padding-top: 7px; }
 .manual-block { margin-bottom: 15px; padding: 12px; border-radius: 6px; background: #fff6e4; color: #694917; }
 .manual-block > p { margin-bottom: 9px; }
+.composition { margin: 14px 0; }
+.composition > .hole-head { margin-bottom: 8px; }
+.composition .muted { font-size: 12px; }
+.board { margin-top: 9px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8fbfe; }
+.board h4 { margin: 0 0 5px; }
+.board-copies { max-width: 155px; margin: 3px 0 10px; }
+.board .holes:last-child { margin-bottom: 0; }
 .pricing { border-top: 1px solid var(--line); padding-top: 14px; margin-bottom: 15px; }
 .pricing > .hole-head { margin-bottom: 9px; }
 .pricing > .hole-head > small { color: var(--muted); }

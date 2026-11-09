@@ -90,15 +90,45 @@ test("订单按原始精度汇总并拒绝重复编号", () => {
 
 test("折弯和焊接件使用人工单件净重，体积留空", () => {
   for (const kind of ["bend", "special"] as const) {
-    const { result } = calculate({ ...base, kind, spec: "异形件", manualWeight: "1.23456", quantity: "7" });
+    const { result } = calculate({ ...base, kind, weightMode: "manual", spec: "异形件", manualWeight: "1.23456", quantity: "7" });
     assert.ok(result);
     assert.equal(result.method, "人工填写");
     assert.equal(result.net, null);
     assert.equal(result.grossWeight, null);
     close(result.totalWeight, 8.64192);
   }
-  assert.ok(calculate({ ...base, kind: "bend" }).errors?.manualWeight);
-  assert.ok(calculate({ ...base, kind: "special", spec: "", manualWeight: "2" }).errors?.spec);
+  assert.ok(calculate({ ...base, kind: "bend", weightMode: "manual" }).errors?.manualWeight);
+  assert.ok(calculate({ ...base, kind: "special", weightMode: "manual", spec: "", manualWeight: "2" }).errors?.spec);
+});
+
+test("折弯板和焊接件分别扣除各组成板的孔并按每件用量与订单数量汇总", () => {
+  const boards = [
+    { ...base, id: "side", copies: "2", circles: [circle] },
+    { ...base, id: "bottom", copies: "1", length: "200", rectangles: [rectangle] },
+    { ...base, id: "top", copies: "1" },
+  ];
+  for (const [kind, count, gross] of [["bend", 2, 320_000], ["special", 3, 400_000]] as const) {
+    const { result } = calculate({ ...base, kind, boards: boards.slice(0, count), quantity: "7" });
+    assert.ok(result);
+    assert.equal(result.method, "组成板汇总");
+    assert.equal(result.boards?.length, count);
+    assert.equal(result.boards?.[0].copies, 2);
+    assert.equal(result.quantity, 7);
+    assert.equal(result.gross, gross);
+    close(result.circleVolume!, 2000 * Math.PI);
+    close(result.rectangleVolume!, 5000);
+    close(result.totalWeight, (gross - 5000 - 2000 * Math.PI) * 7.85 / 1_000_000 * 7);
+  }
+});
+
+test("组成板的无效尺寸、用量和孔径只标记在该组板上", () => {
+  const invalid = { ...base, id: "bad", copies: "1.2", length: "", circles: [{ ...circle, diameter: "81" }] };
+  const { errors } = calculate({ ...base, kind: "bend", boards: [{ ...base, id: "ok", copies: "1" }, invalid] });
+  assert.ok(errors?.["bad.length"]);
+  assert.ok(errors?.["bad.copies"]);
+  assert.ok(errors?.["bad.c.diameter"]);
+  assert.equal(errors?.["ok.length"], undefined);
+  assert.ok(calculate({ ...base, kind: "bend" }).errors?.boards);
 });
 
 test("数量和单价校验，价格与含税状态可选填", () => {

@@ -17,7 +17,7 @@ test("生产订单与计算明细按列保存同一套完整精度结果", async
     circles: [{ id: "c", diameter: "25", quantity: "4" }],
     rectangles: [{ id: "r", length: "15", width: "12", quantity: "2" }],
   };
-  project.parts.push({ ...project.parts[0], id: "b", number: "P-002", kind: "special", spec: "样品焊接件",
+  project.parts.push({ ...project.parts[0], id: "b", number: "P-002", kind: "special", weightMode: "manual", spec: "样品焊接件",
     quantity: "4", manualWeight: "0.1234", manualHoles: "侧面开孔" });
   const rows = rowsFor(project);
   const totals = projectTotals(rows);
@@ -51,4 +51,26 @@ test("生产订单与计算明细按列保存同一套完整精度结果", async
 
 test("未填尺寸的项目无法导出", () => {
   assert.throws(() => report(newProject()), /修正零件数据/);
+});
+
+test("组成板只在计算明细分列，生产订单仍是一行成品", async () => {
+  const project = newProject();
+  project.parts[0] = { ...project.parts[0], kind: "special", quantity: "10", boards: [
+    { id: "side", length: "100", width: "100", thickness: "10", copies: "2", circles: [], rectangles: [] },
+    { id: "bottom", length: "200", width: "100", thickness: "10", copies: "1",
+      circles: [{ id: "c", diameter: "20", quantity: "1" }], rectangles: [] },
+  ] };
+  const bytes = await report(project).xlsx.writeBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(bytes);
+  const [orders, detail] = workbook.worksheets;
+  assert.equal(orders.getCell("E3").value, 10);
+  assert.equal(orders.getCell("O3").value, "组成板汇总");
+  assert.equal(orders.getCell("A4").value, "合计");
+  assert.equal(orders.getCell("I3").value, detail.getCell("T3").value);
+  assert.equal(detail.getCell("A8").value, "P-001");
+  assert.equal(detail.getCell("F8").value, 2);
+  assert.equal(detail.getCell("G8").value, 100);
+  assert.ok(Math.abs(Number(detail.getCell("T8").value) - 1.57) < 1e-12);
+  assert.equal(detail.getCell("J9").value, "Ø20 × 1");
 });

@@ -1,4 +1,4 @@
-import type { Part, Project } from "./calculate";
+import type { Board, Part, Project } from "./calculate";
 import { EMPTY_CATALOG, type Catalog } from "./history";
 
 export const STORAGE_KEY = "steelcalc.projects.v1";
@@ -6,8 +6,8 @@ export type Drafts = { projects: Project[]; active: string; catalog: Catalog; ad
 
 export const partDefaults = {
   kind: "plate", spec: "", manualHoles: "", manualWeight: "", quantity: "1",
-  finish: "", billing: "", price: "", tax: "", priceNotes: "",
-} satisfies Pick<Part, "kind" | "spec" | "manualHoles" | "manualWeight" | "quantity" | "finish" | "billing" | "price" | "tax" | "priceNotes">;
+  finish: "", billing: "", price: "", tax: "", priceNotes: "", weightMode: "boards", boards: [],
+} satisfies Pick<Part, "kind" | "spec" | "manualHoles" | "manualWeight" | "quantity" | "finish" | "billing" | "price" | "tax" | "priceNotes" | "weightMode" | "boards">;
 
 export function id() {
   return globalThis.crypto.randomUUID?.() ?? Array.from(
@@ -23,6 +23,10 @@ export function newPart(existing: Part[]): Part {
   let index = 1;
   while (existing.some((part) => part.number.trim() === partNumber(index))) index++;
   return { ...partDefaults, id: id(), number: partNumber(index), drawing: "", length: "", width: "", thickness: "", notes: "", circles: [], rectangles: [] };
+}
+
+export function newBoard(): Board {
+  return { id: id(), length: "", width: "", thickness: "", copies: "1", circles: [], rectangles: [] };
 }
 
 function partNumber(index: number) {
@@ -51,7 +55,15 @@ export function readDrafts(): Drafts | null {
     addedCustomers: data.addedCustomers ?? data.projects.map((project) => project.customer.trim()).filter(Boolean),
     projects: data.projects.map((project) => ({
       ...project,
-      parts: project.parts.map((part) => ({ ...partDefaults, ...part })),
+      parts: project.parts.map((part) => {
+        const legacyAssembly = !part.weightMode && !!part.kind && part.kind !== "plate";
+        const savedManual = legacyAssembly && (part.manualWeight?.trim() || part.manualHoles?.trim());
+        return {
+          ...partDefaults, ...part,
+          weightMode: part.weightMode ?? (savedManual ? "manual" : "boards"),
+          boards: part.boards ?? (legacyAssembly && !savedManual ? [newBoard(), newBoard()] : []),
+        };
+      }),
     })),
   };
 }

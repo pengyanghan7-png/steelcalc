@@ -49,11 +49,17 @@ test("多工作表提取客户及相同组合最近三价，保留细分表面�
   assert.equal(history.customers[1].name, "手动新增");
 });
 
-test("保留 V1.0 本地项目并默认一件标准板", () => {
+test("保留旧版标准板及已录入的人工重量，空白折弯草稿可直接录入组成板", () => {
   const project = newProject();
   project.customer = "旧版客户";
   const part = { ...project.parts[0], length: "1000", width: "500", thickness: "10" };
-  const original = { ...project, parts: [Object.fromEntries(Object.entries(part).filter(([key]) => !(key in partDefaults)))] };
+  const manual = { ...part, id: "manual", number: "P-002", kind: "special", spec: "旧焊接件", manualWeight: "2.5" };
+  const blankBend = { ...part, id: "bend", number: "P-003", kind: "bend" };
+  const original = { ...project, parts: [
+    Object.fromEntries(Object.entries(part).filter(([key]) => !(key in partDefaults))),
+    Object.fromEntries(Object.entries(manual).filter(([key]) => key !== "weightMode" && key !== "boards")),
+    Object.fromEntries(Object.entries(blankBend).filter(([key]) => key !== "weightMode" && key !== "boards")),
+  ] };
   const previous = globalThis.localStorage;
   const storage = { getItem: (key: string) => key === STORAGE_KEY ? JSON.stringify({ projects: [original], active: project.id }) : null };
   Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
@@ -63,6 +69,11 @@ test("保留 V1.0 本地项目并默认一件标准板", () => {
     const result = migrated && calculate(migrated.projects[0].parts[0]).result;
     assert.equal(result?.quantity, 1);
     assert.equal(result?.totalWeight, 39.25);
+    const existingManual = migrated && calculate(migrated.projects[0].parts[1]).result;
+    assert.equal(existingManual?.method, "人工填写");
+    assert.equal(existingManual?.weight, 2.5);
+    assert.equal(migrated?.projects[0].parts[2].weightMode, "boards");
+    assert.equal(migrated?.projects[0].parts[2].boards.length, 2);
   } finally {
     Object.defineProperty(globalThis, "localStorage", { value: previous, configurable: true });
   }

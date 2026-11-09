@@ -10,17 +10,22 @@ export type Tax = keyof typeof TAX | "";
 
 export type Circle = { id: string; diameter: string; quantity: string };
 export type Rectangle = { id: string; length: string; width: string; quantity: string };
-export type Part = {
-  id: string;
-  number: string;
-  drawing: string;
+export type PlateDimensions = {
   length: string;
   width: string;
   thickness: string;
-  notes: string;
   circles: Circle[];
   rectangles: Rectangle[];
+};
+export type Board = PlateDimensions & { id: string; copies: string };
+export type Part = PlateDimensions & {
+  id: string;
+  number: string;
+  drawing: string;
+  notes: string;
   kind: keyof typeof PART_TYPES;
+  weightMode: "boards" | "manual";
+  boards: Board[];
   spec: string;
   manualHoles: string;
   manualWeight: string;
@@ -44,8 +49,23 @@ export type Project = {
   usage?: Usage;
 };
 
+type BoardResult = {
+  length: number;
+  width: number;
+  thickness: number;
+  circleCount: number;
+  rectangleCount: number;
+  gross: number;
+  circleVolume: number;
+  rectangleVolume: number;
+  removed: number;
+  net: number;
+  grossWeight: number;
+  weight: number;
+};
+
 export type Result = {
-  method: "自动计算" | "人工填写";
+  method: "自动计算" | "组成板汇总" | "人工填写";
   quantity: number;
   length: number | null;
   width: number | null;
@@ -60,7 +80,10 @@ export type Result = {
   grossWeight: number | null;
   weight: number;
   totalWeight: number;
+  boards?: { copies: number; geometry: BoardResult }[];
 };
+
+type Check<T> = { result: T; errors?: never } | { errors: Record<string, string>; result?: never };
 
 function positive(raw: string) {
   const value = Number(raw);
@@ -77,7 +100,7 @@ export function nonnegative(raw: string) {
   return raw.trim() && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-export function calculate(part: Part): { result: Result; errors?: never } | { errors: Record<string, string>; result?: never } {
+export function calculate(part: Part): Check<Result> {
   const errors: Record<string, string> = {};
   const quantity = integer(part.quantity);
   if (quantity === null) errors.quantity = "订单数量须为正整数";
@@ -85,7 +108,7 @@ export function calculate(part: Part): { result: Result; errors?: never } | { er
     if (nonnegative(part.price) === null) errors.price = "单价须为大于或等于 0 的数字";
     if (!part.billing) errors.billing = "请先选择计价方式";
   }
-  if (part.kind !== "plate") {
+  if (part.kind !== "plate" && part.weightMode === "manual") {
     const weight = nonnegative(part.manualWeight);
     if (!part.spec.trim()) errors.spec = "请填写规格说明";
     if (weight === null) errors.manualWeight = "请填写大于或等于 0 的单件净重";
@@ -97,9 +120,20 @@ export function calculate(part: Part): { result: Result; errors?: never } | { er
       gross: null, circleVolume: null, rectangleVolume: null, removed: null, net: null, grossWeight: null, weight, totalWeight,
     } };
   }
-  const length = positive(part.length);
-  const width = positive(part.width);
-  const thickness = positive(part.thickness);
+  const computed = part.kind === "plate" ? calculateBoard(part) : calculateBoards(part.boards);
+  if (quantity === null || !computed.result || Object.keys(errors).length) return { errors: { ...errors, ...computed.errors } };
+  const totalWeight = computed.result.weight * quantity;
+  if (!Number.isFinite(totalWeight)) return { errors: { volume: "总净重超出可计算范围。" } };
+  return { result: {
+    ...computed.result, method: part.kind === "plate" ? "自动计算" : "组成板汇总", quantity, totalWeight,
+  } };
+}
+
+function calculateBoard(board: PlateDimensions): Check<BoardResult> {
+  const errors: Record<string, string> = {};
+  const length = positive(board.length);
+  const width = positive(board.width);
+  const thickness = positive(board.thickness);
   if (length === null) errors.length = "长度须大于 0";
   if (width === null) errors.width = "宽度须大于 0";
   if (thickness === null) errors.thickness = "厚度须大于 0";
@@ -108,7 +142,7 @@ export function calculate(part: Part): { result: Result; errors?: never } | { er
   let circleCount = 0;
   let rectangleCount = 0;
 
-  for (const hole of part.circles) {
+  for (const hole of board.circles) {
     const diameter = positive(hole.diameter);
     const count = integer(hole.quantity);
     if (diameter === null) errors[hole.id + ".diameter"] = "孔径须大于 0";
@@ -122,7 +156,7 @@ export function calculate(part: Part): { result: Result; errors?: never } | { er
     }
   }
 
-  for (const hole of part.rectangles) {
+  for (const hole of board.rectangles) {
     const a = positive(hole.length);
     const b = positive(hole.width);
     const count = integer(hole.quantity);
@@ -137,7 +171,7 @@ export function calculate(part: Part): { result: Result; errors?: never } | { er
     }
   }
 
-  if (length === null || width === null || thickness === null || quantity === null || Object.keys(errors).length) return { errors };
+  if (length === null || width === null || thickness === null || Object.keys(errors).length) return { errors };
 
   const gross = length * width * thickness;
   const circleVolume = circleArea * thickness;
@@ -146,16 +180,44 @@ export function calculate(part: Part): { result: Result; errors?: never } | { er
   const net = gross - removed;
   const weight = net * (DENSITY / 1_000_000);
   const grossWeight = gross * (DENSITY / 1_000_000);
-  const totalWeight = weight * quantity;
-  if (![gross, removed, weight, totalWeight].every(Number.isFinite) || gross <= 0 ||
+  if (![gross, removed, weight].every(Number.isFinite) || gross <= 0 ||
       !Number.isSafeInteger(circleCount) || !Number.isSafeInteger(rectangleCount)) {
     return { errors: { volume: "尺寸或数量超出可计算范围，请检查输入。" } };
   }
   if (net < 0) return { errors: { volume: "扣孔体积超过原板体积，请检查孔尺寸和数量。" } };
   return { result: {
-    method: "自动计算", quantity, length, width, thickness, circleCount, rectangleCount, gross,
-    circleVolume, rectangleVolume, removed, net, grossWeight, weight, totalWeight,
+    length, width, thickness, circleCount, rectangleCount, gross, circleVolume, rectangleVolume, removed, net, grossWeight, weight,
   } };
+}
+
+function calculateBoards(boards: Board[]): Check<Omit<Result, "quantity" | "method" | "totalWeight">> {
+  if (!boards.length) return { errors: { boards: "请至少添加一块组成板。" } };
+  const errors: Record<string, string> = {};
+  const validated: NonNullable<Result["boards"]> = [];
+  const totals = {
+    circleCount: 0, rectangleCount: 0, gross: 0, circleVolume: 0,
+    rectangleVolume: 0, removed: 0, net: 0, grossWeight: 0, weight: 0,
+  };
+  for (const board of boards) {
+    const copies = integer(board.copies);
+    const computed = calculateBoard(board);
+    if (copies === null) errors[board.id + ".copies"] = "每件用量须为正整数";
+    for (const [key, message] of Object.entries(computed.errors ?? {})) {
+      errors[board.id + "." + key] = message;
+    }
+    if (copies === null || !computed.result) continue;
+    const geometry = computed.result;
+    validated.push({ copies, geometry });
+    for (const key of Object.keys(totals) as (keyof typeof totals)[]) {
+      totals[key] += geometry[key] * copies;
+    }
+  }
+  if (Object.keys(errors).length) return { errors };
+  if (!Object.values(totals).every(Number.isFinite) ||
+      !Number.isSafeInteger(totals.circleCount) || !Number.isSafeInteger(totals.rectangleCount)) {
+    return { errors: { volume: "组成板合计超出可计算范围。" } };
+  }
+  return { result: { length: null, width: null, thickness: null, ...totals, boards: validated } };
 }
 
 export function summarize(rows: Result[]) {

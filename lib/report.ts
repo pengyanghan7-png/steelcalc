@@ -50,10 +50,10 @@ export function report(project: Project) {
     const [date, ...cells] = orderCells(project, part, result);
     tableRow(orders, [new Date(String(date) + "T00:00:00Z"), ...cells]);
     const groups = holeGroups(part);
-    const automatic = result.method === "自动计算";
+    const standard = result.method === "自动计算";
     tableRow(detail, [part.number, part.drawing || project.drawing, PART_TYPES[part.kind], cells[1], result.method,
-      result.quantity, result.length, result.width, result.thickness, automatic ? groups.circles : "",
-      automatic ? groups.rectangles : "", automatic ? "" : part.manualHoles,
+      result.quantity, result.length, result.width, result.thickness, standard ? groups.circles : "",
+      standard ? groups.rectangles : "", result.method === "人工填写" ? part.manualHoles : "",
       result.gross, result.circleVolume, result.rectangleVolume, result.removed, result.net,
       result.grossWeight, result.weight, result.totalWeight]);
   }
@@ -67,6 +67,27 @@ export function report(project: Project) {
   darkRow(detailTotal);
   if (project.name) detail.addRow(["项目 / 订单", project.name]);
   if (project.notes) detail.addRow(["项目备注", project.notes]);
+  const assemblies = rows.filter(({ result }) => result?.boards?.length);
+  if (assemblies.length) {
+    detail.addRow([]);
+    const title = detail.addRow(["组成板明细 · 每行按所属零件编号关联"]);
+    detail.mergeCells(title.number, 1, title.number, DETAIL_HEADERS.length);
+    darkRow(title);
+    darkRow(detail.addRow([
+      "所属零件编号", "图纸编号", "组成板", "", "", "每件用量 (块)", "长 (mm)", "宽 (mm)", "厚 (mm)",
+      CIRCLE_LABEL, RECTANGLE_LABEL, "", "每块毛体积 (mm³)", "圆孔扣除 (mm³)", "方孔扣除 (mm³)",
+      "每块扣除 (mm³)", "每块净体积 (mm³)", "每块毛重 (kg)", "每块净重 (kg)", "每件贡献净重 (kg)",
+    ]));
+    for (const { part, result } of assemblies) {
+      result?.boards?.forEach(({ copies, geometry }, index) => {
+        const groups = holeGroups(part.boards[index]);
+        tableRow(detail, [part.number, part.drawing || project.drawing, "板 " + (index + 1), "", "", copies,
+          geometry.length, geometry.width, geometry.thickness, groups.circles, groups.rectangles, "",
+          geometry.gross, geometry.circleVolume, geometry.rectangleVolume, geometry.removed, geometry.net,
+          geometry.grossWeight, geometry.weight, geometry.weight * copies]);
+      });
+    }
+  }
   format(orders, [1], "yyyy-mm-dd");
   format(orders, [7], "#,##0.00");
   format(orders, [8, 9], "#,##0.000");
