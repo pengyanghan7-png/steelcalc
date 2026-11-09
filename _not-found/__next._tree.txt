@@ -1,4 +1,4 @@
-:HL["/steelcalc/_next/static/chunks/1un5saw9h08oc.css","style"]
+:HL["/steelcalc/_next/static/chunks/3bux8ai961klx.css","style"]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":"/_not-found","h":96,"c":"$Q2"}]]
-0:{"b":"K0j2MYAWxDzbbXMW9VHwy","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"fYEfdwp5GGouGeRG8ZTGY","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
