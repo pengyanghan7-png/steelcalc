@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./style.css";
 
 export const metadata: Metadata = {
-  title: "SteelCalc · 钢板重量计算",
-  description: "按图纸尺寸计算钢板与贯穿孔体积，查询历史单价并导出生产订单 Excel。",
+  title: "SteelCalc V2.0 · 钢板加工订单工作台",
+  description: "钢板算重、订单交接、按型号发货、财务到账及经营 Excel 报表。",
 };
 
 export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {

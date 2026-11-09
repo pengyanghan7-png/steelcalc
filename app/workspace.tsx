@@ -7,6 +7,7 @@ import { ORDER_HEADERS, orderCells } from "../lib/order";
 import { STORAGE_KEY, newDrafts, newPart, newProject, readDrafts, today, type Drafts } from "../lib/projects";
 import { Card, Field, Icon, PlateDiagram, SearchField } from "./ui";
 import { CalculationDetails, PartEditor } from "./part-editor";
+import OperationsDesk, { SECTIONS, type Section } from "./operations-desk";
 
 const volumes = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const weights = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -15,11 +16,14 @@ const numbers = new Intl.NumberFormat("zh-CN");
 const EMPTY_PROJECTS: Project[] = [];
 const EMPTY_CUSTOMERS: string[] = [];
 type View = "entry" | "results";
+type Module = "orders" | Section;
 
 export default function Workspace() {
   const [drafts, setDrafts] = useState<Drafts | null>(null);
   const [selected, select] = useState("");
   const [view, setView] = useState<View>("entry");
+  const [module, setModule] = useState<Module>("orders");
+  const [handoff, setHandoff] = useState("");
   const [validated, setValidated] = useState(false);
   const [notice, setNotice] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -44,7 +48,14 @@ export default function Workspace() {
       setDrafts(latestDrafts.current);
       setStorageError("本地项目无法读取。请检查浏览器存储设置。");
     }
-    const syncView = () => setView(location.hash === "#results" ? "results" : "entry");
+    const syncView = () => {
+      const target = location.hash.slice(1);
+      if (Object.hasOwn(SECTIONS, target)) setModule(target as Section);
+      else {
+        setModule("orders");
+        setView(target === "results" ? "results" : "entry");
+      }
+    };
     syncView();
     addEventListener("hashchange", syncView);
     return () => removeEventListener("hashchange", syncView);
@@ -105,7 +116,15 @@ export default function Workspace() {
   }
 
   function go(next: View) {
+    setModule("orders");
     setView(next);
+    if (location.hash !== "#" + next) location.hash = next;
+    window.scrollTo(0, 0);
+  }
+
+  function openModule(next: Section, orderId = "") {
+    setHandoff(orderId);
+    setModule(next);
     if (location.hash !== "#" + next) location.hash = next;
     window.scrollTo(0, 0);
   }
@@ -201,11 +220,17 @@ export default function Workspace() {
   return <>
     <header className="top">
       <div className="top-inner">
-        <div className="brand"><span className="brand-mark"><Icon name="plate" size={23} /></span><span><strong>SteelCalc</strong><small>钢板重量计算</small></span></div>
-        <button className="button top-button" disabled={!project} onClick={() => projectsDialog.current?.showModal()}><Icon name="folder" /> 本地项目</button>
+        <div className="brand"><span className="brand-mark"><Icon name="plate" size={23} /></span><span><strong>SteelCalc <span className="brand-version">V2.0</span></strong><small>钢板加工订单工作台</small></span></div>
+        {module === "orders" && <button className="button top-button" disabled={!project} onClick={() => projectsDialog.current?.showModal()}><Icon name="folder" /> 本地项目</button>}
       </div>
     </header>
     <main>
+      <nav className="suite-nav" aria-label="业务板块">
+        <button aria-current={module === "orders" ? "page" : undefined} onClick={() => go(view)}>订单管理</button>
+        {(Object.entries(SECTIONS) as [Section, string][]).map(([key, label]) =>
+          <button key={key} aria-current={module === key ? "page" : undefined} onClick={() => { if (module !== key) openModule(key); }}>{label}</button>)}
+      </nav>
+      {module !== "orders" ? <OperationsDesk section={module} projects={projects} preferred={handoff} back={() => go(view)} /> : <>
       <nav aria-label="计算流程" className="steps">
         <button aria-current={view === "entry" ? "step" : undefined} onClick={() => { setNotice(""); go("entry"); }}><span>01</span> 零件录入</button>
         <Icon name="right" size={14} />
@@ -291,7 +316,8 @@ export default function Workspace() {
         </div>
         <Card title="生产订单表" subtitle="按订单数量汇总重量。手工录入的重量会标记为「人工填写」。" action={<div className="buttons">
           <button className="button secondary" onClick={() => addPart()}><Icon name="plus" /> 添加零件</button>
-          <button className="button primary" disabled={!totals || exporting} onClick={exportExcel}><Icon name="download" /> {exporting ? "正在生成…" : "导出 Excel"}</button>
+          <button className="button secondary" disabled={!totals || exporting} onClick={exportExcel}><Icon name="download" /> {exporting ? "正在生成…" : "导出 Excel"}</button>
+          <button className="button primary" disabled={!totals} onClick={() => openModule("shipments", project.id)}>转入发货 <Icon name="right" /></button>
         </div>}>
           {!totals && <p role="alert" className="alert">{rows.length ? "请返回录入页修正零件数据或项目合计后再导出。" : "请添加零件后再导出。"}</p>}
           {notice && <p role="status" className="status">{notice}</p>}
@@ -315,7 +341,8 @@ export default function Workspace() {
         </Card>
         <div className="action-bar"><button className="button secondary" onClick={() => { setNotice(""); go("entry"); }}><Icon name="left" /> 返回零件录入</button><span>Excel 包含生产订单表与计算明细</span></div>
       </>}
-      <footer><span>SteelCalc · V1.2</span><span>长度 mm　/　体积 mm³　/　重量 kg</span></footer>
+      </>}
+      <footer><span>SteelCalc · V2.0</span><span>{module === "orders" ? "长度 mm　/　体积 mm³　/　重量 kg" : "记录与附件保存在当前浏览器"}</span></footer>
     </main>
     <dialog ref={projectsDialog} aria-labelledby="projects-title">
       <div className="dialog-head"><h2 id="projects-title">本地项目</h2><button className="icon-button" aria-label="关闭本地项目" onClick={() => projectsDialog.current?.close()}><Icon name="close" /></button></div>
